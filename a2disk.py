@@ -10,6 +10,7 @@
 
 
 import sys
+import os
 
 from applesoft import ApplesoftHandler
 
@@ -49,6 +50,8 @@ class Disk:
     an object representing a disk image with ability to read sectors
     """
 
+    DISK_SIZE = 143360
+    BLOCK_SIZE = 512
     TRACKS_PER_DISK = 0x23
     SECTORS_PER_TRACK = 0x10
     SECTOR_SIZE = 0x100
@@ -56,7 +59,15 @@ class Disk:
     def __init__(self, image_name):
         self.image_name = image_name
 
+        self.sector_mapping1 = [0, 13, 11, 9, 7, 5, 3, 1]
+        self.sector_mapping2 = [14, 12, 10, 8, 6, 4, 2, 15]
+
+        self.physical_size = 0
+
     def __enter__(self):
+        self.physical_size = os.stat(self.image_name).st_size
+        if (self.physical_size != Disk.DISK_SIZE):
+            raise Exception("Incorrect file size for DOS 3.3 disk")
         self.disk_image = open(self.image_name, "rb")
         return self
 
@@ -71,6 +82,24 @@ class Disk:
     def read_sect(self, track, sector):
         self.seek_sect(track, sector)
         return self.disk_image.read(Disk.SECTOR_SIZE)
+
+    def read_block(self, block):
+        # No more than 280 blocks on a DOS 3.3 disk
+        if (block > 280):
+            raise Exception("block out of range. requested block: {0:d}".format(block))
+        track = int(block // 8)
+        sector_index = block % 8
+        sector1 = self.sector_mapping1[sector_index]
+        sector2 = self.sector_mapping2[sector_index]
+        block_data = bytearray(0)
+        s1 = self.read_sect(track, sector1)
+        s2 = self.read_sect(track, sector2)
+        block_data.extend(s1)
+        block_data.extend(s2)
+        return(block_data)
+
+    def get_num_blocks(self):
+        return(int(self.physical_size // Disk.BLOCK_SIZE))
 
 
 class VTOC:
